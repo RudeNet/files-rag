@@ -1,0 +1,10 @@
+# Files Explorer - Python 3.10+
+ollama>=0.6,<1          # client for the local Ollama server (LLM + embeddings)
+numpy>=1.26             # in-memory vector search
+rich>=13                # terminal output
+flask>=3.0              # web UI + API
+pypdf>=4                # PDF text
+python-docx>=1.1        # Word .docx
+python-pptx>=0.6.23     # PowerPoint .pptx
+openpyxl>=3.1           # Excel .xlsx
+pillow>=10              # image size, EXIF date taken
