@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Files Explorer</title>
+<script>
+  // apply saved appearance before first paint (no theme flash)
+  try {
+    const p = JSON.parse(localStorage.getItem("filerag.prefs") || "{}");
+    if (p.theme && p.theme !== "system") document.documentElement.dataset.theme = p.theme;
+    if (p.fontSize) document.documentElement.dataset.fontsize = p.fontSize;
+  } catch {}
+</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 5.5A2.5 2.5 0 0 1 5.5 3h4.2l2 2.2h6.8A2.5 2.5 0 0 1 21 7.7v10.8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 18.5v-13Zm9.6 5.3a3.4 3.4 0 1 0 1.9 6.2l2 2 1.1-1.1-2-2a3.4 3.4 0 0 0-3-5.1Zm0 1.5a1.9 1.9 0 1 1 0 3.8 1.9 1.9 0 0 1 0-3.8Z"/></svg>
+      <span>Files Explorer</span>
+      <button class="icon-btn close-sidebar" id="closeSidebar" aria-label="Close menu" title="Close menu">«</button>
+    </div>
+    <button class="new-chat" id="newChat">+ New chat</button>
+    <button class="settings-btn lib-btn" id="openFiles">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3 6a2 2 0 0 1 2-2h4.5l2 2H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Zm2 3v9h14V9H5Z"/></svg>
+      Files <span class="lib-count" id="libCount"></span>
+    </button>
+    <nav class="chat-list">
+      <div class="list-h">Chats</div>
+      <div id="chatList"></div>
+      <div class="list-h">Notes <span class="list-hint" title="Summaries of past chats, or your own notes. Attach a note to a chat to give the model that background.">?</span>
+        <button class="list-add" id="newNote" title="Write a note">+ New</button></div>
+      <div id="noteList"><p class="list-empty">No notes yet. Use “Summarize” on a chat.</p></div>
+    </nav>
+    <div class="status" id="status">
+      <div class="status-row"><span class="dot" id="ollamaDot"></span><span id="modelName">connecting…</span></div>
+      <div class="status-row small" id="gpuInfo"></div>
+      <div class="index-box">
+        <div class="status-row small"><span>File map</span><span id="indexText"></span></div>
+        <div class="bar"><div id="indexBar"></div></div>
+        <div class="status-row small" id="jobText" hidden></div>
+        <button class="link-btn" id="reloadIndex" hidden>Load newly indexed vectors</button>
+      </div>
+      <button class="settings-btn" id="openSettings">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1c.5.4 1.1.7 1.7 1l.4 2.6h4l.4-2.6c.6-.3 1.2-.6 1.7-1l2.5 1 2-3.5-2.1-1.6ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z" transform="translate(-1 0)"/></svg>
+        Settings
+      </button>
+      <div class="sidebar-foot">
+        <span><b>Storage</b> SQLite · local only</span>
+        <span><b>Version</b> <span id="appVersion">…</span></span>
+        <a class="made-by" href="https://rudenetworks.com" target="_blank" rel="noopener" title="rudenetworks.com">
+          <img src="/static/rudenetworks.png" alt="rudenetworks logo">
+          <span>built by <b>rudenetworks</b><br><em>rudenetworks.com</em></span>
+        </a>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+  <main class="main">
+   <div class="chat-view" id="chatView">
+    <header class="topbar">
+      <button class="icon-btn" id="toggleSidebar" aria-label="Toggle sidebar">☰</button>
+      <h1 id="chatTitle">New chat</h1>
+      <div class="chat-actions" id="chatActions" hidden>
+        <button class="act" id="exportChat" title="Download this chat as Markdown">⬇ Save</button>
+        <button class="act" id="summarizeChat" title="Write a summary note you can carry into a new chat">✎ Summarize</button>
+      </div>
+    </header>
+
+    <div class="note-chips" id="noteChips" hidden></div>
+    <section class="messages" id="messages">
+      <div class="empty" id="empty">
+        <h2>Ask your files</h2>
+        <p id="emptyLead">Find any file by name, extension, size, date or what is written inside it. A model running on your GPU searches the map of your folders. Nothing leaves this machine.</p>
+        <div class="suggestions">
+          <button>What kinds of files do I have, and which take the most space?</button>
+          <button>Find the 10 largest files modified this year</button>
+          <button>Which files mention a password, token or API key?</button>
+          <button>Where are my PDF invoices or receipts?</button>
+        </div>
+        <button class="ask-btn" id="emptyAdd" hidden>+ Map your first folder</button>
+      </div>
+    </section>
+
+    <div class="composer-wrap">
+      <div class="ctx-banner" id="ctxBanner" hidden>
+        <div class="ctx-banner-text">
+          <strong id="ctxBannerTitle">Context almost full</strong>
+          <span id="ctxBannerMsg"></span>
+        </div>
+        <div class="ctx-banner-actions">
+          <button class="primary" id="bannerContinue" title="Summarize this chat into a note and continue in a fresh chat with it attached">Summarize &amp; continue</button>
+          <button id="bannerSave" title="Download the full chat as Markdown">Save chat</button>
+          <button id="bannerReset" title="Start an empty chat (this one stays in the sidebar)">Reset</button>
+          <button class="x" id="bannerDismiss" aria-label="Dismiss">✕</button>
+        </div>
+      </div>
+      <form class="composer" id="composer">
+        <textarea id="input" rows="1" placeholder="Ask about your files: names, types, sizes, dates, contents…" autofocus></textarea>
+        <button type="submit" class="send" id="send" aria-label="Send">➤</button>
+        <button type="button" class="stop" id="stop" hidden>■ Stop</button>
+      </form>
+      <div class="composer-foot">
+        <span id="inputTokens">~0 tokens</span>
+        <span class="hint" id="sendHint">Enter to send · Shift+Enter for new line</span>
+        <span class="ctx" id="ctx" hidden></span>
+        <button class="model-chip" id="modelChip" title="Change model"></button>
+      </div>
+    </div>
+   </div>
+
+    <section class="settings-page" id="filesPage" hidden>
+      <header class="topbar settings-head">
+        <button class="icon-btn" id="toggleSidebar3" aria-label="Toggle sidebar">☰</button>
+        <button class="act" id="closeFiles" title="Back to the chat (Esc)">← Back</button>
+        <h1>Files</h1>
+        <div class="chat-actions">
+          <button class="act" id="rescanAll" title="Rescan every mapped folder (only new or changed files are read)">↻ Rescan all</button>
+        </div>
+      </header>
+      <div class="settings-grid">
+        <section class="settings-card span-all">
+          <h3>Mapped folders <span class="saved" id="addNote"></span></h3>
+          <div class="field">
+            <label for="addPath">Map a folder on this computer (files stay where they are)</label>
+            <div class="pull-row">
+              <input id="addPath" placeholder="e.g. D:\Projects or C:\Users\me\Documents" autocomplete="off" spellcheck="false">
+              <button id="addPathBtn">Map folder</button>
+            </div>
+            <p class="note">Every file is recorded by name, extension, size and dates. Text, code, documents, spreadsheets and e-mails are also read for content search.</p>
+          </div>
+          <div class="job-box" id="jobBox" hidden>
+            <div class="pull-status"><span id="jobStatus"></span><span id="jobCount"></span></div>
+            <div class="bar"><div id="jobBar"></div></div>
+            <button class="link-btn" id="jobStop">Stop</button>
+          </div>
+          <div class="model-list" id="rootList"><p class="note">Loading…</p></div>
+        </section>
+
+        <section class="settings-card">
+          <h3>Folder sizes <span class="saved" id="folderTotal"></span></h3>
+          <div class="folder-nav">
+            <button class="act" id="folderUp" title="Up one level" hidden>↑ Up</button>
+            <span class="folder-path" id="folderPath">Mapped folders</span>
+            <button class="link-btn" id="folderFiles" hidden>Show files</button>
+          </div>
+          <div class="cat-list" id="folderList"><p class="note">Loading…</p></div>
+        </section>
+        <section class="settings-card">
+          <h3>Clean-up <span class="saved" id="cleanTotal"></span></h3>
+          <div class="cat-list" id="cleanList"><p class="note">Loading…</p></div>
+          <p class="note">Nothing is ever deleted by Files Explorer: click a line to list the files, then decide.</p>
+        </section>
+
+        <section class="settings-card">
+          <h3>By type <span class="saved" id="typeTotal"></span></h3>
+          <div class="cat-list" id="catList"></div>
+        </section>
+        <section class="settings-card">
+          <h3>Extensions <span class="saved" id="extTotal"></span></h3>
+          <div class="ext-cloud" id="extCloud"></div>
+        </section>
+
+        <section class="settings-card span-all" id="browseCard">
+          <h3>Browse &amp; search <span class="saved" id="fileSummary"></span></h3>
+          <div class="lib-filter">
+            <input id="fq" placeholder="File name, e.g. invoice 2024 or *.tar.gz" autocomplete="off" spellcheck="false">
+            <div class="seg seg-sm" id="fmode">
+              <button data-v="name" class="on" title="Match file names">Name</button><button data-v="content" title="Search inside readable files">Content</button><button data-v="dupes" title="Sets of identical files">Duplicates</button>
+            </div>
+          </div>
+          <div class="lib-filter">
+            <select id="fcat"><option value="">All types</option></select>
+            <input id="fext" placeholder="Extensions: pdf, py" autocomplete="off" spellcheck="false">
+            <select id="froot"><option value="">All folders</option></select>
+            <select id="fdate">
+              <option value="">Any date</option><option value="1d">Last 24 hours</option><option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option><option value="1y">Last year</option>
+            </select>
+            <select id="fsize">
+              <option value="">Any size</option><option value="-100KB">&lt; 100 KB</option><option value="1MB-">&gt; 1 MB</option>
+              <option value="100MB-">&gt; 100 MB</option><option value="1GB-">&gt; 1 GB</option>
+            </select>
+            <select id="fsort">
+              <option value="name">Name A→Z</option><option value="modified">Newest first</option><option value="size">Largest first</option>
+              <option value="path">Path</option><option value="ext">Extension</option>
+            </select>
+          </div>
+          <div class="active-filters" id="activeFilters"></div>
+          <div class="model-list" id="fileList"><p class="note">Loading…</p></div>
+          <button class="link-btn" id="moreFiles" hidden>Load more</button>
+        </section>
+      </div>
+    </section>
+
+    <section class="settings-page" id="settingsPage" hidden>
+      <header class="topbar settings-head">
+        <button class="icon-btn" id="toggleSidebar2" aria-label="Toggle sidebar">☰</button>
+        <button class="act" id="closeSettings" title="Back to the chat (Esc)">← Back</button>
+        <h1>Settings</h1>
+      </header>
+      <div class="settings-grid">
+    <section class="settings-card">
+      <h3>Appearance</h3>
+      <div class="field">
+        <label>Theme</label>
+        <div class="seg" data-pref="theme">
+          <button data-v="system">System</button><button data-v="light">Light</button>
+          <button data-v="dark">Dark</button><button data-v="hack">Hack</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Text size</label>
+        <div class="seg" data-pref="fontSize">
+          <button data-v="small">Small</button><button data-v="medium">Medium</button><button data-v="large">Large</button>
+        </div>
+      </div>
+    </section>
+    <section class="settings-card">
+      <h3>Chat</h3>
+      <div class="field">
+        <label>Answer length</label>
+        <div class="seg" id="setLength">
+          <button data-v="concise">Concise</button><button data-v="normal">Normal</button><button data-v="detailed">Detailed</button>
+        </div>
+        <p class="note" id="lengthNote">Writing is the slow part (~20 words/s on this GPU), so shorter answers come back much faster.</p>
+      </div>
+      <div class="field row">
+        <label for="prefEnter">Enter sends message<p class="note">Off: Ctrl+Enter sends, Enter adds a line.</p></label>
+        <input type="checkbox" class="toggle" id="prefEnter" data-pref="enterSends">
+      </div>
+      <div class="field row">
+        <label for="prefSteps">Expand tool steps</label>
+        <input type="checkbox" class="toggle" id="prefSteps" data-pref="expandSteps">
+      </div>
+      <div class="field row">
+        <label for="prefStats">Show token stats under answers</label>
+        <input type="checkbox" class="toggle" id="prefStats" data-pref="showStats">
+      </div>
+    </section>
+    <section class="settings-card span-all">
+      <h3>Mapping <span class="saved" id="mapNote"></span></h3>
+      <div class="settings-cols">
+        <div>
+          <div class="field row">
+            <label for="setContent">Read file contents<p class="note">Index the text of documents, code, notes, spreadsheets and e-mails for content search. Off: names and metadata only (fastest).</p></label>
+            <input type="checkbox" class="toggle" id="setContent" data-setting="content_index">
+          </div>
+          <div class="field row">
+            <label for="setEmbed">Semantic search<p class="note">Embed every passage with the embedding model on the GPU, so searches match meaning, not only words.</p></label>
+            <input type="checkbox" class="toggle" id="setEmbed" data-setting="embed_content">
+          </div>
+          <div class="field row">
+            <label for="setSniff">Detect text in unknown extensions<p class="note">Files with an unfamiliar extension are read when their bytes look like text.</p></label>
+            <input type="checkbox" class="toggle" id="setSniff" data-setting="sniff_unknown">
+          </div>
+          <div class="field row">
+            <label for="setDupes">Find duplicates<p class="note">Compare files that have the same size (SHA-256), so identical copies can be listed.</p></label>
+            <input type="checkbox" class="toggle" id="setDupes" data-setting="find_duplicates">
+          </div>
+          <div class="field row">
+            <label for="setMedia">Read image details<p class="note">Pixel size, date taken and camera from photos (EXIF).</p></label>
+            <input type="checkbox" class="toggle" id="setMedia" data-setting="read_media">
+          </div>
+          <div class="field row">
+            <label for="setArchives">List files inside archives<p class="note">Names inside .zip, .jar, .whl and .tar archives become searchable.</p></label>
+            <input type="checkbox" class="toggle" id="setArchives" data-setting="list_archives">
+          </div>
+          <div class="field row">
+            <label for="setHidden">Skip hidden files and folders<p class="note">Names starting with a dot, and Windows hidden system folders.</p></label>
+            <input type="checkbox" class="toggle" id="setHidden" data-setting="skip_hidden">
+          </div>
+        </div>
+        <div>
+          <div class="field">
+            <label for="setMaxMb">Largest file to read (MB)</label>
+            <input type="number" id="setMaxMb" data-setting="max_content_mb" min="1" max="500">
+            <p class="note">Bigger files are still mapped by name, size and date.</p>
+          </div>
+          <div class="field">
+            <label for="setExclude">Folders to skip</label>
+            <textarea id="setExclude" rows="3" spellcheck="false" data-setting="exclude_dirs"></textarea>
+            <p class="note">Folder names, comma-separated, matched at any depth (e.g. node_modules, .git, build).</p>
+          </div>
+          <p class="note">Changes apply to the next scan. Use <b>Rescan all</b> on the Files page to apply them now.</p>
+        </div>
+      </div>
+    </section>
+    <section class="settings-card span-all">
+      <h3>Model <span class="saved" id="savedNote"></span></h3>
+      <div class="field">
+        <label for="setModel">Chat model</label>
+        <select id="setModel" data-setting="chat_model"></select>
+        <p class="note" id="modelInfo"></p>
+      </div>
+      <div class="field">
+        <label for="pullName">Download a model <a class="note-link" href="https://ollama.com/search?c=tools" target="_blank" rel="noopener noreferrer">browse tool models ↗</a></label>
+        <div class="pull-row">
+          <input id="pullName" list="modelSuggestions" placeholder="e.g. qwen3:8b, llama3.1:8b" autocomplete="off" spellcheck="false">
+          <button id="pullBtn">Download &amp; use</button>
+        </div>
+        <datalist id="modelSuggestions"></datalist>
+        <div class="pull-box" id="pullBox" hidden>
+          <div class="pull-status"><span id="pullStatus"></span><span id="pullBytes"></span></div>
+          <div class="bar"><div id="pullBar"></div></div>
+          <button class="link-btn" id="pullCancel">Cancel download</button>
+        </div>
+        <p class="note">Runs locally once downloaded. Already-installed models switch instantly. The agent needs a model with tool calling.</p>
+      </div>
+      <div class="field">
+        <label>Installed models</label>
+        <div class="model-list" id="modelList"><p class="note">Loading…</p></div>
+      </div>
+      <div class="field">
+        <label for="setTemp">Temperature <span class="val" id="tempVal"></span></label>
+        <input type="range" id="setTemp" data-setting="temperature" min="0" max="1" step="0.05">
+        <p class="note">Low = precise and repeatable; high = more varied wording.</p>
+      </div>
+      <div class="field">
+        <label for="setCtx">Context window</label>
+        <select id="setCtx" data-setting="num_ctx"></select>
+        <p class="note">How much conversation and file text the model sees at once. 32k uses ~15.8 GB VRAM with both models loaded.</p>
+      </div>
+      <div class="field row">
+        <label for="setThink">Reasoning mode<p class="note">Model thinks before answering: better on complex questions, much slower.</p></label>
+        <input type="checkbox" class="toggle" id="setThink" data-setting="think">
+      </div>
+      <div class="field">
+        <label for="setRounds">Max tool calls per answer</label>
+        <input type="number" id="setRounds" data-setting="max_tool_rounds" min="1" max="20">
+      </div>
+    </section>
+        <section class="settings-card span-all" id="apiCard">
+      <h3>API <span class="saved" id="apiNote"></span></h3>
+      <div class="field row">
+        <label for="setApi">Enable API access<p class="note">Lets scripts and other programs use Files Explorer over HTTP at <code id="apiBase"></code>. Every request needs an API key.</p></label>
+        <input type="checkbox" class="toggle" id="setApi" data-setting="api_enabled">
+      </div>
+      <p class="note" id="apiReach"></p>
+
+      <div class="field">
+        <label for="keyName">API keys</label>
+        <div class="pull-row">
+          <input id="keyName" maxlength="60" placeholder="Key name, e.g. backup-script, my-laptop" autocomplete="off">
+          <button id="keyCreate">Create key</button>
+        </div>
+        <div class="key-reveal" id="keyReveal" hidden>
+          <p><strong>Copy this key now:</strong> it is shown only once.</p>
+          <div class="key-box"><code id="keyValue"></code><button id="keyCopy">Copy</button></div>
+        </div>
+        <div class="model-list" id="keyList"></div>
+      </div>
+
+      <div class="field">
+        <label>Endpoints</label>
+        <div class="table-wrap"><table class="api-table">
+          <tr><td><code>GET /health</code></td><td>Status, version, model, catalog size</td></tr>
+          <tr><td><code>GET /files</code></td><td>Find files: <code>name</code>, <code>ext</code>, <code>category</code>, <code>folder</code>, <code>root</code>, <code>min_size</code>, <code>max_size</code>, <code>after</code>, <code>before</code>, <code>sort</code>, <code>order</code>, <code>limit</code>, <code>offset</code> — fast, no LLM</td></tr>
+          <tr><td><code>GET /files/{ref}</code></td><td>One file: path, size, dates, content status; <code>/text</code> reads its text, <code>/raw</code> downloads it</td></tr>
+          <tr><td><code>GET /search?q=…</code></td><td>Content search inside files (hybrid keyword + semantic), same filters plus <code>mode</code></td></tr>
+          <tr><td><code>GET /stats?by=ext</code></td><td>Counts and sizes by <code>ext</code>, <code>category</code>, <code>folder</code>, <code>root</code>, <code>year</code>, <code>month</code></td></tr>
+          <tr><td><code>GET /duplicates</code></td><td>Sets of identical files (same filters), <code>sort</code> = wasted, copies or size</td></tr>
+          <tr><td><code>GET /folders?path=…</code></td><td>Sub-folders with their total size and file count; <code>GET /cleanup</code> lists space that could be freed</td></tr>
+          <tr><td><code>GET /roots</code></td><td>Mapped folders. <code>POST /roots</code> <code>{"path"}</code> maps a new one (scanned in the background)</td></tr>
+          <tr><td><code>POST /ask</code></td><td>Ask the agent: <code>{"question", "save", "chat_id", "stream"}</code>. <code>save:true</code> stores the chat and returns <code>chat_id</code> for follow-ups; <code>stream:true</code> returns live events</td></tr>
+        </table></div>
+      </div>
+
+      <div class="field">
+        <label>Examples</label>
+        <div class="seg seg-sm" id="exTabs">
+          <button data-ex="curl" class="on">curl</button><button data-ex="python">Python</button><button data-ex="ps">PowerShell</button>
+        </div>
+        <pre class="api-ex"><code id="exCode"></code></pre>
+        <button class="link-btn" id="exCopy">Copy example</button>
+      </div>
+    </section>
+      </div>
+    </section>
+  </main>
+
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-head">
+      <span id="drawerTitle">File</span>
+      <button class="icon-btn" id="closeDrawer" aria-label="Close">✕</button>
+    </div>
+    <div class="drawer-body" id="drawerBody"></div>
+  </aside>
+</div>
+<script src="/static/markdown.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
